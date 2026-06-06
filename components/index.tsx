@@ -2,7 +2,7 @@
 // Semua komponen UI dikumpulkan di sini
 
 import React from "react";
-import type { Payment, PeriodStats } from "@/types";
+import type { Payment, PaymentDetail, PeriodStats } from "@/types";
 
 function formatRp(n: number) {
   return "Rp " + n.toLocaleString("id-ID");
@@ -111,7 +111,7 @@ export function AddMemberModal({ defaultAmount, onClose, onSave }: { defaultAmou
   );
 }
 
-export function EditPaymentModal({ pay, onClose, onSave }: { pay: Payment; onClose: () => void; onSave: (id: string, updates: Partial<Pick<Payment, "member_name" | "amount" | "notes">>) => void }) {
+export function EditPaymentModal({ pay, onClose, onSave }: { pay: PaymentDetail; onClose: () => void; onSave: (id: string, updates: Partial<Pick<PaymentDetail, "member_name" | "amount" | "notes">>) => void }) {
   const [name, setName] = React.useState(pay.member_name);
   const [amount, setAmount] = React.useState(pay.amount);
   const [notes, setNotes] = React.useState(pay.notes || "");
