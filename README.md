@@ -1,4 +1,4 @@
-# 🏘️ KasDesa v2 — Pencatatan Iuran RT / Kas Kelas
+# 🏘️ KasDesa — Pencatatan Iuran RT / Kas Kelas
 
 Aplikasi web lengkap untuk bendahara RT atau kelas.
 **Next.js 14 · Tailwind CSS · Supabase · Recharts**
@@ -41,7 +41,6 @@ Isi `.env.local`:
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-NEXT_PUBLIC_FONNTE_TOKEN=   # opsional, untuk kirim WA
 ```
 
 ### 3. Jalankan
@@ -84,8 +83,7 @@ kasdesa/
 
 ## Fitur Pengingat WhatsApp (Bebas Token & Gratis)
 
-Fitur ini menggunakan tautan resmi WhatsApp Web/App (`wa.me`) sehingga **100% gratis, unlimited, dan tanpa perlu daftar/menggunakan API Token pihak ketiga (seperti Fonnte)** yang sering kedaluwarsa.
-
+Fitur ini menggunakan tautan resmi WhatsApp Web/App (`wa.me`)
 1. **Cara Mengirim Pengingat:**
    - Pastikan nomor WhatsApp warga sudah terdaftar di tab **👥 Warga** (format otomatis dinormalisasi, Anda bebas menulis `08xxx`, `628xxx`, atau menggunakan tanda hubung seperti `0812-xxx-xxx`).
    - Pada halaman utama, klik filter **Belum** untuk melihat semua warga yang belum membayar iuran.
