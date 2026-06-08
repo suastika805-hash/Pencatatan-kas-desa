@@ -1,7 +1,7 @@
 "use client";
-// app/laporan/page.tsx — Laporan Keuangan Tahunan KasDesa v2 (Ultra-Premium Dark Theme)
+// app/laporan/page.tsx — Laporan Keuangan Tahunan KasDesa v3 (with Monthly Filter)
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   fetchYearlyFinancialReport,
@@ -25,6 +25,8 @@ const MONTHS_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
   "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
 ];
+
+type StatusFilter = "all" | "surplus" | "defisit" | "ada_transaksi";
 
 function rp(n: number) {
   return "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -51,6 +53,12 @@ export default function LaporanTahunanPage() {
     totalExpense: number;
     balance: number;
   }>({ totalIncome: 0, totalExpense: 0, balance: 0 });
+
+  // ── Filter state ───────────────────────────────────────
+  const [fromMonth, setFromMonth] = useState(1);
+  const [toMonth, setToMonth] = useState(12);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [showFilter, setShowFilter] = useState(false);
 
   const [editMonth, setEditMonth] = useState<number | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
@@ -90,15 +98,12 @@ export default function LaporanTahunanPage() {
   async function handleSaveQuickEdit() {
     setModalLoading(true);
     try {
-      // 1. Update existing expenses
       for (const exp of modalExpenses) {
         await updateExpense(exp.id, {
           amount: Number(exp.amount),
           description: exp.description,
         });
       }
-
-      // 2. Add new expense if filled
       if (editMonth !== null && newExpenseForm.description.trim() && newExpenseForm.amount) {
         const defaultDate = `${year}-${String(editMonth).padStart(2, "0")}-01`;
         await createExpense({
@@ -110,8 +115,6 @@ export default function LaporanTahunanPage() {
           period_id: null,
         });
       }
-
-      // 3. Reload yearly report and close modal
       await loadReport();
       setEditMonth(null);
     } catch (err) {
@@ -126,17 +129,47 @@ export default function LaporanTahunanPage() {
     loadReport();
   }, [loadReport]);
 
-  // Chart data
-  const chartData = reportData.monthlyReport.map((m) => ({
+  // ── Computed: filtered months ─────────────────────────
+  const filteredMonths = useMemo(() => {
+    return reportData.monthlyReport.filter((m) => {
+      // Filter rentang bulan
+      if (m.month < fromMonth || m.month > toMonth) return false;
+      // Filter status
+      const balance = m.income - m.expense;
+      if (statusFilter === "surplus" && balance <= 0) return false;
+      if (statusFilter === "defisit" && balance >= 0) return false;
+      if (statusFilter === "ada_transaksi" && m.income === 0 && m.expense === 0) return false;
+      return true;
+    });
+  }, [reportData.monthlyReport, fromMonth, toMonth, statusFilter]);
+
+  // ── Computed: summary for filtered months ─────────────
+  const filteredSummary = useMemo(() => {
+    const totalIncome = filteredMonths.reduce((s, m) => s + m.income, 0);
+    const totalExpense = filteredMonths.reduce((s, m) => s + m.expense, 0);
+    return { totalIncome, totalExpense, balance: totalIncome - totalExpense };
+  }, [filteredMonths]);
+
+  // ── Computed: chart data (only filtered months) ───────
+  const chartData = filteredMonths.map((m) => ({
     bulan: MONTHS_SHORT[m.month - 1],
     Pemasukan: m.income,
     Pengeluaran: m.expense,
   }));
 
+  // ── Check if filter is active ─────────────────────────
+  const isFilterActive = fromMonth !== 1 || toMonth !== 12 || statusFilter !== "all";
+
+  function resetFilter() {
+    setFromMonth(1);
+    setToMonth(12);
+    setStatusFilter("all");
+  }
+
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-100 transition-colors duration-300">
       <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#262626] rounded-xl border border-neutral-800 p-3 sm:p-4 mb-4 sm:mb-6 shadow-sm gap-3">
           <div className="flex items-center gap-3">
@@ -165,7 +198,7 @@ export default function LaporanTahunanPage() {
           </div>
         </div>
 
-        {/* Lifetime / Total Accumulation Banner */}
+        {/* Lifetime Banner */}
         <div className="bg-gradient-to-r from-teal-950/40 via-teal-950/20 to-[#262626] border border-teal-800/40 rounded-2xl p-4 sm:p-5 mb-4 sm:mb-6 shadow-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-3 sm:gap-4">
             <div className="w-10 h-10 sm:w-14 sm:h-14 bg-teal-600/90 rounded-xl sm:rounded-2xl flex items-center justify-center text-white text-xl sm:text-3xl shadow-lg shadow-teal-500/10 flex-shrink-0">💰</div>
@@ -185,7 +218,7 @@ export default function LaporanTahunanPage() {
           </div>
         </div>
 
-        {/* Stats Grid */}
+        {/* Stats Grid (yearly totals) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl sm:rounded-2xl p-3.5 sm:p-5 flex items-center gap-3 sm:gap-4 shadow-sm">
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-600 rounded-lg sm:rounded-xl flex items-center justify-center text-white text-xl sm:text-2xl flex-shrink-0 shadow-sm shadow-emerald-500/20">📥</div>
@@ -217,13 +250,129 @@ export default function LaporanTahunanPage() {
           </div>
         </div>
 
-        {/* Visual Chart */}
+        {/* ── FILTER PANEL ───────────────────────────────── */}
+        <div className="bg-[#262626] border border-neutral-800 rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-4 sm:mb-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🔍</span>
+              <span className="text-xs sm:text-sm font-semibold text-white">Filter Rekap Bulanan</span>
+              {isFilterActive && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-600/30 text-teal-400 border border-teal-700/50">
+                  Aktif
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {isFilterActive && (
+                <button
+                  onClick={resetFilter}
+                  className="text-[11px] text-neutral-400 hover:text-rose-400 transition-colors font-medium"
+                >
+                  ✕ Reset
+                </button>
+              )}
+              <button
+                onClick={() => setShowFilter(v => !v)}
+                className="text-xs px-3 py-1.5 border border-neutral-700 text-neutral-300 rounded-lg hover:bg-neutral-800 transition-colors font-medium"
+              >
+                {showFilter ? "▲ Tutup" : "▼ Buka"}
+              </button>
+            </div>
+          </div>
+
+          {showFilter && (
+            <div className="mt-4 pt-4 border-t border-neutral-800 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* From month */}
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">Dari Bulan</label>
+                <select
+                  value={fromMonth}
+                  onChange={(e) => {
+                    const v = +e.target.value;
+                    setFromMonth(v);
+                    if (v > toMonth) setToMonth(v);
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-neutral-700 rounded-lg bg-neutral-800 text-white focus:outline-none focus:border-teal-500"
+                >
+                  {MONTHS_FULL.map((m, i) => (
+                    <option key={i} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* To month */}
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">Sampai Bulan</label>
+                <select
+                  value={toMonth}
+                  onChange={(e) => {
+                    const v = +e.target.value;
+                    setToMonth(v);
+                    if (v < fromMonth) setFromMonth(v);
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-neutral-700 rounded-lg bg-neutral-800 text-white focus:outline-none focus:border-teal-500"
+                >
+                  {MONTHS_FULL.map((m, i) => (
+                    <option key={i} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status filter */}
+              <div>
+                <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">Status Keuangan</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                  className="w-full px-3 py-2 text-sm border border-neutral-700 rounded-lg bg-neutral-800 text-white focus:outline-none focus:border-teal-500"
+                >
+                  <option value="all">Semua Bulan</option>
+                  <option value="surplus">Hanya Surplus ✓</option>
+                  <option value="defisit">Hanya Defisit ⚠️</option>
+                  <option value="ada_transaksi">Ada Transaksi</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Filter summary result */}
+          {isFilterActive && !loading && (
+            <div className="mt-4 pt-4 border-t border-neutral-800">
+              <p className="text-[11px] text-neutral-400 mb-2 font-medium uppercase tracking-wider">
+                Hasil Filter — {filteredMonths.length} bulan ({MONTHS_FULL[fromMonth - 1]}
+                {fromMonth !== toMonth ? ` – ${MONTHS_FULL[toMonth - 1]}` : ""})
+                {statusFilter !== "all" && ` · ${statusFilter === "surplus" ? "Surplus" : statusFilter === "defisit" ? "Defisit" : "Ada Transaksi"}`}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-emerald-950/30 border border-emerald-900/40 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-emerald-400 font-medium uppercase tracking-wider mb-0.5">Pemasukan</p>
+                  <p className="text-sm sm:text-base font-bold text-emerald-300">{rp(filteredSummary.totalIncome)}</p>
+                </div>
+                <div className="bg-rose-950/30 border border-rose-900/40 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-rose-400 font-medium uppercase tracking-wider mb-0.5">Pengeluaran</p>
+                  <p className="text-sm sm:text-base font-bold text-rose-300">{rp(filteredSummary.totalExpense)}</p>
+                </div>
+                <div className={`${filteredSummary.balance >= 0 ? "bg-teal-950/30 border-teal-900/40" : "bg-red-950/30 border-red-900/40"} rounded-xl p-3 text-center`}>
+                  <p className={`text-[10px] font-medium uppercase tracking-wider mb-0.5 ${filteredSummary.balance >= 0 ? "text-teal-400" : "text-red-400"}`}>Selisih</p>
+                  <p className={`text-sm sm:text-base font-bold ${filteredSummary.balance >= 0 ? "text-teal-300" : "text-red-300"}`}>
+                    {filteredSummary.balance >= 0 ? "+" : ""}{rp(filteredSummary.balance)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Visual Chart — filtered data */}
         <div className="bg-[#262626] border border-neutral-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 mb-4 sm:mb-6 shadow-sm">
           <h2 className="text-xs sm:text-sm font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
             📊 Grafik Pemasukan vs Pengeluaran ({year})
+            {isFilterActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-700/30 text-teal-400 border border-teal-700/40">Terfilter</span>}
           </h2>
           {loading ? (
             <div className="text-center py-12 sm:py-16 text-neutral-500 text-sm">Memuat grafik...</div>
+          ) : chartData.length === 0 ? (
+            <div className="text-center py-12 text-neutral-500 text-sm">Tidak ada data untuk filter ini.</div>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
@@ -245,17 +394,30 @@ export default function LaporanTahunanPage() {
 
         {/* Breakdown Table */}
         <div className="bg-[#262626] border border-neutral-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 shadow-sm">
-          <h2 className="text-xs sm:text-sm font-semibold text-white mb-3 sm:mb-4">
-            🗓️ Rekap Per Bulan ({year})
-          </h2>
-          
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
+              🗓️ Rekap Per Bulan ({year})
+              {isFilterActive && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-700/30 text-teal-400 border border-teal-700/40">
+                  {filteredMonths.length} bulan
+                </span>
+              )}
+            </h2>
+          </div>
+
           {/* Mobile: Card view */}
           <div className="block sm:hidden">
             {loading ? (
               <div className="text-center py-12 text-neutral-500 text-sm">Memuat laporan...</div>
+            ) : filteredMonths.length === 0 ? (
+              <div className="text-center py-10 text-neutral-500 text-sm">
+                <div className="text-3xl mb-2">📭</div>
+                <p>Tidak ada bulan yang sesuai filter.</p>
+                <button onClick={resetFilter} className="mt-3 text-xs text-teal-400 hover:underline">Reset filter</button>
+              </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {reportData.monthlyReport.map((m) => {
+                {filteredMonths.map((m) => {
                   const balance = m.income - m.expense;
                   const status = balance > 0 ? "Surplus" : balance < 0 ? "Defisit" : "Nihil";
                   return (
@@ -267,7 +429,7 @@ export default function LaporanTahunanPage() {
                           : status === "Defisit" ? "bg-rose-950/40 text-rose-400"
                           : "bg-neutral-800 text-neutral-400"
                         }`}>
-                          {status === "Surplus" ? "✓ Surplus" : status === "Defisit" ? "⏳ Defisit" : "● Nihil"}
+                          {status === "Surplus" ? "✓ Surplus" : status === "Defisit" ? "⚠️ Defisit" : "● Nihil"}
                         </span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center">
@@ -303,6 +465,31 @@ export default function LaporanTahunanPage() {
                     </div>
                   );
                 })}
+
+                {/* Mobile filter total */}
+                {filteredMonths.length > 0 && (
+                  <div className="bg-neutral-800/60 border border-neutral-700 rounded-xl p-3 mt-1">
+                    <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold mb-2">
+                      Total {filteredMonths.length} Bulan
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] text-neutral-500">Masuk</p>
+                        <p className="text-xs font-bold text-emerald-400">{rp(filteredSummary.totalIncome)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-neutral-500">Keluar</p>
+                        <p className="text-xs font-bold text-rose-400">{rp(filteredSummary.totalExpense)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-neutral-500">Selisih</p>
+                        <p className={`text-xs font-bold ${filteredSummary.balance >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {filteredSummary.balance >= 0 ? "+" : ""}{rp(filteredSummary.balance)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -325,8 +512,16 @@ export default function LaporanTahunanPage() {
                   <tr>
                     <td colSpan={6} className="text-center py-12 text-neutral-500">Memuat laporan...</td>
                   </tr>
+                ) : filteredMonths.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-10 text-neutral-500">
+                      <div className="text-2xl mb-2">📭</div>
+                      <p className="text-sm">Tidak ada bulan yang sesuai filter.</p>
+                      <button onClick={resetFilter} className="mt-2 text-xs text-teal-400 hover:underline">Reset filter</button>
+                    </td>
+                  </tr>
                 ) : (
-                  reportData.monthlyReport.map((m) => {
+                  filteredMonths.map((m) => {
                     const balance = m.income - m.expense;
                     const status = balance > 0 ? "Surplus" : balance < 0 ? "Defisit" : "Nihil";
                     const statusClass =
@@ -365,7 +560,7 @@ export default function LaporanTahunanPage() {
                         </td>
                         <td className="py-3 px-3">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${statusClass}`}>
-                            {status === "Surplus" ? "✓ Surplus" : status === "Defisit" ? "⏳ Defisit" : "● Nihil"}
+                            {status === "Surplus" ? "✓ Surplus" : status === "Defisit" ? "⚠️ Defisit" : "● Nihil"}
                           </span>
                         </td>
                         <td className="py-3 px-3 last:pr-0 text-center">
@@ -381,6 +576,26 @@ export default function LaporanTahunanPage() {
                   })
                 )}
               </tbody>
+              {/* Desktop tfoot total */}
+              {!loading && filteredMonths.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-neutral-700">
+                    <td className="py-3 px-3 first:pl-0 text-xs font-bold text-neutral-300 uppercase tracking-wider">
+                      Total ({filteredMonths.length} bulan)
+                    </td>
+                    <td className="py-3 px-3 text-sm font-bold text-emerald-300">
+                      {rp(filteredSummary.totalIncome)}
+                    </td>
+                    <td className="py-3 px-3 text-sm font-bold text-rose-300">
+                      {rp(filteredSummary.totalExpense)}
+                    </td>
+                    <td className={`py-3 px-3 text-sm font-black ${filteredSummary.balance >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {filteredSummary.balance >= 0 ? "+" : ""}{rp(filteredSummary.balance)}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -390,32 +605,20 @@ export default function LaporanTahunanPage() {
       {/* Quick Edit Modal */}
       {editMonth !== null && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#262626] rounded-2xl border border-neutral-800 shadow-xl max-w-md w-full p-6 animate-scale-up text-left">
-            
+          <div className="bg-[#262626] rounded-2xl border border-neutral-800 shadow-xl max-w-md w-full p-6 text-left">
+
             <div className="flex items-center justify-between pb-4 border-b border-neutral-800 mb-4">
               <div>
-                <h3 className="text-base font-bold text-white">
-                  Edit Cepat Pengeluaran
-                </h3>
-                <p className="text-xs text-neutral-400">
-                  Bulan {MONTHS_FULL[editMonth - 1]} {year}
-                </p>
+                <h3 className="text-base font-bold text-white">Edit Cepat Pengeluaran</h3>
+                <p className="text-xs text-neutral-400">Bulan {MONTHS_FULL[editMonth - 1]} {year}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setEditMonth(null)}
-                className="text-neutral-400 hover:text-white text-lg"
-              >
-                ✕
-              </button>
+              <button type="button" onClick={() => setEditMonth(null)} className="text-neutral-400 hover:text-white text-lg">✕</button>
             </div>
 
             {modalLoading ? (
               <div className="text-center py-8 text-neutral-500 text-sm">Sedang memproses...</div>
             ) : (
               <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto pr-1">
-                
-                {/* List of existing expenses */}
                 {modalExpenses.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Daftar Transaksi</p>
@@ -456,11 +659,8 @@ export default function LaporanTahunanPage() {
                   </div>
                 )}
 
-                {/* Form to add a new expense */}
                 <div className="border-t border-neutral-800 pt-3">
-                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">
-                    + Tambah Pengeluaran Baru
-                  </p>
+                  <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">+ Tambah Pengeluaran Baru</p>
                   <div className="flex flex-col gap-2">
                     <input
                       type="text"
@@ -491,11 +691,9 @@ export default function LaporanTahunanPage() {
                     </div>
                   </div>
                 </div>
-
               </div>
             )}
 
-            {/* Footer Actions */}
             <div className="flex gap-2 justify-end pt-4 border-t border-neutral-800 mt-4">
               <button
                 type="button"
@@ -513,7 +711,6 @@ export default function LaporanTahunanPage() {
                 {modalLoading ? "Menyimpan..." : "Simpan Perubahan"}
               </button>
             </div>
-
           </div>
         </div>
       )}
